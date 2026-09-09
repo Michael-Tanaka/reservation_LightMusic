@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<title>軽音部 練習予約</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f3f4f6;color:#111827}
+header{background:#111827;color:white;padding:18px 16px 14px;position:sticky;top:0;z-index:10}
+header h1{margin:0;font-size:20px}header p{margin:4px 0 0;color:#cbd5e1;font-size:12px}
+main{max-width:560px;margin:auto;padding:14px 12px 90px}.card{background:white;border-radius:16px;padding:14px;margin-bottom:12px;box-shadow:0 2px 8px #0000000d}
+.row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+button,select{font:inherit}button{border:0;border-radius:10px;padding:10px 13px;background:#111827;color:white;font-weight:600;cursor:pointer}
+button.secondary{background:#e5e7eb;color:#111827}button.danger{background:#fee2e2;color:#991b1b}
+button:disabled{opacity:.45;cursor:not-allowed}.tabs{display:flex;gap:8px;margin-bottom:12px}.tabs button{flex:1;background:#e5e7eb;color:#374151}.tabs button.active{background:#111827;color:white}
+.date{font-size:18px;font-weight:700}.sub{font-size:12px;color:#6b7280;margin-top:2px}
+.slots{display:grid;gap:8px;margin-top:12px}.slot{border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#fff;text-align:left;width:100%}.slot.free{border-color:#bbf7d0;background:#f0fdf4}.slot.mine{border-color:#bfdbfe;background:#eff6ff}.slot.busy{background:#f9fafb}
+.slot .time{font-weight:700}.slot .status{font-size:12px;margin-top:4px;color:#6b7280}.slot .band{font-weight:600;margin-top:4px}
+label{display:block;font-size:12px;color:#6b7280;margin:10px 0 5px}select{width:100%;padding:11px;border:1px solid #d1d5db;border-radius:10px;background:white}
+.modal{position:fixed;inset:0;background:#0008;display:none;align-items:flex-end;z-index:20}.sheet{background:white;width:100%;max-width:560px;margin:auto;border-radius:20px 20px 0 0;padding:20px 16px 28px}.sheet h2{margin:0 0 8px;font-size:20px}.actions{display:flex;gap:8px;margin-top:18px}.actions button{flex:1}
+.badge{display:inline-block;padding:4px 8px;border-radius:999px;background:#e5e7eb;font-size:11px}.empty{text-align:center;color:#6b7280;padding:25px 5px}
+.notice{font-size:12px;color:#6b7280;line-height:1.6}
+</style>
+</head>
+<body>
+<header><h1>🎸 軽音部・練習予約</h1><p>部室の練習枠をかんたん予約</p></header>
+<main>
+<div class="card">
+ <div class="row"><div><div class="date" id="dateTitle"></div><div class="sub" id="dateSub"></div></div>
+ <div class="row"><button class="secondary" id="prev">‹</button><button class="secondary" id="next">›</button></div></div>
+</div>
+
+<div class="tabs">
+ <button id="tabSchedule" class="active">練習予定</button>
+ <button id="tabMine">自分の予約</button>
+</div>
+
+<section id="schedule">
+<div class="card">
+ <label for="band">ログイン中のバンド</label>
+ <select id="band"></select>
+ <div class="notice" style="margin-top:8px">※試作品なので、バンド名を選ぶだけでログインできます。</div>
+</div>
+<div class="card"><div class="row"><strong>練習枠</strong><span class="badge">16:00〜21:00</span></div><div class="slots" id="slots"></div></div>
+</section>
+
+<section id="mine" style="display:none">
+<div class="card"><strong>自分の予約</strong><div id="mineList"></div></div>
+</section>
+</main>
+
+<div class="modal" id="modal">
+ <div class="sheet">
+  <h2 id="modalTitle"></h2><div id="modalBody"></div>
+  <div class="actions"><button class="secondary" id="close">閉じる</button><button id="modalAction"></button></div>
+ </div>
+</div>
+
+<script>
+const bands=["Aバンド","Bバンド","Cバンド","Dバンド","Eバンド","Fバンド","Gバンド","Hバンド"];
+const times=["16:00〜17:00","17:00〜18:00","18:00〜19:00","19:00〜20:00","20:00〜21:00"];
+let date=new Date(); date.setHours(12,0,0,0);
+let reservations=JSON.parse(localStorage.getItem("lightMusicReservations")||"null")||[
+ {date:key(new Date()),time:"16:00〜17:00",band:"Aバンド",note:""},
+ {date:key(new Date()),time:"18:00〜19:00",band:"Bバンド",note:""},
+ {date:key(new Date()),time:"20:00〜21:00",band:"Cバンド",note:""}
+];
+let currentBand=localStorage.getItem("lightMusicBand")||bands[0];
+let selected=null;
+
+const $=id=>document.getElementById(id);
+function key(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
+function save(){localStorage.setItem("lightMusicReservations",JSON.stringify(reservations))}
+function jp(d){return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`}
+function render(){
+ $("dateTitle").textContent=jp(date);
+ $("dateSub").textContent=["日","月","火","水","木","金","土"][date.getDay()]+"曜日";
+ $("band").value=currentBand;
+ $("slots").innerHTML="";
+ times.forEach(time=>{
+  const r=reservations.find(x=>x.date===key(date)&&x.time===time);
+  const b=document.createElement("button"); b.className="slot "+(r?(r.band===currentBand?"mine":"busy"):"free");
+  b.innerHTML=`<div class="time">${time}</div><div class="status">${r?(r.band===currentBand?"あなたの予約":"予約済み"):"空き"}</div>${r?`<div class="band">${r.band}</div>`:""}`;
+  b.onclick=()=>openSlot(time,r); $("slots").appendChild(b);
+ });
+ renderMine();
+}
+function renderMine(){
+ const arr=reservations.filter(r=>r.band===currentBand).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+ if(!arr.length){$("mineList").innerHTML='<div class="empty">予約はありません</div>';return}
+ $("mineList").innerHTML=arr.map((r,i)=>`<div class="card" style="box-shadow:none;border:1px solid #e5e7eb;margin:10px 0 0"><div class="row"><strong>${r.date}</strong><span class="badge">${r.time}</span></div>${r.note?`<div class="sub" style="margin-top:7px">メモ：${escapeHtml(r.note)}</div>`:""}<button class="danger" style="margin-top:10px;width:100%" onclick="cancelByIndex(${reservations.indexOf(r)})">予約をキャンセル</button></div>`).join("");
+}
+function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
+function openSlot(time,r){
+ selected={time,r};
+ $("modalTitle").textContent=time;
+ if(r){
+  $("modalBody").innerHTML=`<p><strong>${r.band}</strong> が予約しています。</p>${r.note?`<p class="notice">メモ：${escapeHtml(r.note)}</p>`:""}`;
+  $("modalAction").textContent=r.band===currentBand?"予約をキャンセル":"閉じる";
+  $("modalAction").className=r.band===currentBand?"danger":"secondary";
+  $("modalAction").onclick=r.band===currentBand?()=>cancelSelected() : closeModal;
+ }else{
+  $("modalBody").innerHTML=`<p>${jp(date)} の <strong>${time}</strong> を予約します。</p><label>メモ（任意）</label><input id="note" style="width:100%;padding:11px;border:1px solid #d1d5db;border-radius:10px" placeholder="例：新曲練習">`;
+  $("modalAction").textContent="予約する"; $("modalAction").className="";
+  $("modalAction").onclick=reserveSelected;
+ }
+ $("modal").style.display="flex";
+}
+function reserveSelected(){
+ if(reservations.some(x=>x.date===key(date)&&x.time===selected.time)){closeModal();render();return}
+ const note=$("note")?.value||"";
+ reservations.push({date:key(date),time:selected.time,band:currentBand,note});save();closeModal();render();
+}
+function cancelSelected(){
+ const i=reservations.findIndex(x=>x.date===key(date)&&x.time===selected.time&&x.band===currentBand);
+ if(i>=0){reservations.splice(i,1);save()}closeModal();render();
+}
+function cancelByIndex(i){
+ if(!confirm("この予約をキャンセルする？"))return;
+ reservations.splice(i,1);save();render();
+}
+function closeModal(){$("modal").style.display="none"}
+$("prev").onclick=()=>{date.setDate(date.getDate()-1);render()}
+$("next").onclick=()=>{date.setDate(date.getDate()+1);render()}
+$("close").onclick=closeModal;
+$("modal").onclick=e=>{if(e.target===$("modal"))closeModal()}
+$("band").innerHTML=bands.map(b=>`<option>${b}</option>`).join("");
+$("band").onchange=e=>{currentBand=e.target.value;localStorage.setItem("lightMusicBand",currentBand);render()}
+$("tabSchedule").onclick=()=>{ $("schedule").style.display="block";$("mine").style.display="none";$("tabSchedule").className="active";$("tabMine").className=""}
+$("tabMine").onclick=()=>{ $("schedule").style.display="none";$("mine").style.display="block";$("tabSchedule").className="";$("tabMine").className="active";renderMine()}
+render();
+</script>
+</body>
+</html>
